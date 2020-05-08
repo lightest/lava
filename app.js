@@ -17,6 +17,7 @@ var mainModule = (function () {
       this._audioCtx = undefined;
       this._audioData = undefined;
       this._dataLen = 0;
+      this._processedData = undefined;
       this._frequencyData = undefined;
       this._waveFormData = undefined;
       this._gl = undefined;
@@ -79,9 +80,11 @@ var mainModule = (function () {
       this.sourceNode.connect(this.analyserNode);
       this.gainNode.connect(this._audioCtx.destination);
       this._dataLen = this.analyserNode.fftSize;
-      this._frequencyData = new Float32Array(this._dataLen);
+      // this._frequencyData = new Float32Array(this._dataLen);
+      this._frequencyData = new Uint8Array(this._dataLen);
       // this._waveFormData = new Float32Array(this._dataLen);
       this._waveFormData = new Uint8Array(this._dataLen);
+      this._processedData = new Uint8Array(this._dataLen);
     }
 
     async _fetchShaders () {
@@ -275,23 +278,26 @@ var mainModule = (function () {
       if (this.analyserNode === undefined) {
         return;
       }
-      for (i = 0; i < this._waveFormData.length; i++) {
-        avrgWaveForm += this._waveFormData[i];
-      }
       // this.analyserNode.getFloatTimeDomainData(this._waveFormData);
       this.analyserNode.getByteTimeDomainData(this._waveFormData);
-      this.analyserNode.getFloatFrequencyData(this._frequencyData);
-      for (i = 0; i < this._dataLen; i++) {
-        value = this._waveFormData[i] / 256;
-        x = i * (1920 / 1024);
-        c = Math.cos(x * .05 - this._audioCtx.currentTime /* * avrgWaveForm * .0001*/) * 1;
-        y = (this.cnv.height - (this.cnv.height * value * 50 ) - 1)  - this.cnv.height * .5;
-      }
+      // this.analyserNode.getFloatFrequencyData(this._frequencyData);
+      this.analyserNode.getByteFrequencyData(this._frequencyData);
+      // for (i = 0; i < this._waveFormData.length; i++) {
+      //   avrgWaveForm += this._waveFormData[i];
+      //   this._processedData[i] = this._waveFormData[i] * this._frequencyData[i];
+      // }
+      this._processedData = new Uint8Array([...this._waveFormData, ...this._frequencyData]);
+      // for (i = 0; i < this._dataLen; i++) {
+      //   value = this._waveFormData[i] / 256;
+      //   x = i * (1920 / 1024);
+      //   c = Math.cos(x * .05 - this._audioCtx.currentTime /* * avrgWaveForm * .0001*/) * 1;
+      //   y = (this.cnv.height - (this.cnv.height * value * 50 ) - 1)  - this.cnv.height * .5;
+      // }
       this._gl.clear(this._gl.COLOR_BUFFER_BIT | this._gl.DEPTH_BUFFER_BIT);
       this._gl.uniform1f(this._pi.unifs.t, performance.now());
       let level = 0;
       let internalFormat = this._gl.LUMINANCE;
-      let width = 2048;
+      let width = 4096;
       let height = 1;
       let border = 0;
       let srcFormat = this._gl.LUMINANCE;
@@ -320,7 +326,8 @@ var mainModule = (function () {
         border,
         srcFormat,
         srcType,
-        this._waveFormData
+        this._processedData
+        // this._waveFormData
         // new Uint8Array([0,0,255,255,0,255,0,255])
       );
 
