@@ -1,11 +1,41 @@
 precision mediump float;
 attribute vec4 aVPos;
 attribute vec2 aTextureCoord;
+attribute float aTimeDomainMul;
+attribute vec3 aAdjacentV0;
+attribute vec3 aAdjacentV1;
 uniform mat4 uMVMatrix;
 uniform mat4 uProjectionMatrix;
 varying vec2 vTextureCoord;
+varying vec3 vFragPos;
+varying vec3 vLighting;
 
 void main () {
-  gl_Position = uProjectionMatrix * uMVMatrix * aVPos;
+  // vec4 verPos = vec4(aVPos.x * aTimeDomainMul, aVPos.y * aTimeDomainMul, aVPos.z * aTimeDomainMul, aVPos.w);
+  float mul = aTimeDomainMul * 2.0;
+  // vec4 verPos = vec4(aVPos.x, aVPos.y, mul * 2.0, aVPos.w);
+  vec4 verPos = aVPos;
+  vec3 edge0 = aAdjacentV0 - verPos.xyz;
+  vec3 edge1 = aAdjacentV1 - verPos.xyz;
+  vec3 faceNormal = cross(edge1, edge0);
+  // faceNormal = vec3(0.0, 0.0, 1.0);
+  // gl_Position = uProjectionMatrix * uMVMatrix * aVPos * aTimeDomainMul;
+  // vFragPos = uMVMatrix * verPos;
   vTextureCoord = aTextureCoord;
+  vec4 transformedPos = uProjectionMatrix * uMVMatrix * verPos;
+  vec4 transformedNormal = normalize(uMVMatrix * vec4(faceNormal, 0.0));
+  // vec4 transformedNormal = vec4(faceNormal, 1.0);
+  vec3 lightDirection = normalize(vec3(0.0, -1.0, 0.0));
+  vec3 ambientLight = vec3(.5, .5, .5);
+  vec3 specularColor = vec3(1.0, 1.0, 1.0);
+  vec3 eyeDirection = -normalize((uMVMatrix * verPos)).xyz;
+  vec3 directionalLightColor = vec3(0.5, 0.5, 0.5);
+  float directionalLightAmount = max(0.0, dot(transformedNormal.xyz, lightDirection));
+  vec3 reflectionDirection = reflect(lightDirection, transformedNormal.xyz);
+  float specularAmount = max(0.0, dot(eyeDirection, reflectionDirection));
+  vLighting = ambientLight + directionalLightColor * directionalLightAmount +
+  specularColor * pow(specularAmount, 0.5) * specularColor * pow(specularAmount, 2.0) * 20.0;
+  // specularColor * specularAmount;
+  gl_Position = uProjectionMatrix * uMVMatrix * verPos;
+  // gl_Position = uMVMatrix * verPos;
 }
