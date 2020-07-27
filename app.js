@@ -487,7 +487,7 @@ var mainModule = (function () {
       let row = 0;
       for (i = 0; i < verticesAmount; i++) {
         row = Math.floor(i / side);
-        vertices[i * 3 + 2] = Math.sin(elapsedTime * .007 + row * .1) * 2.0;
+        vertices[i * 3 + 2] = Math.sin(elapsedTime * .007 + row * .2) * 2.0;
       }
     }
 

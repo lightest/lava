@@ -30,8 +30,8 @@ void main () {
   vec3 lightDirection = normalize(vec3(0.0, -1.0, 0.0));
   vec3 ambientLight = vec3(.5, .5, .5);
   vec3 specularColor = vec3(1.0, 1.0, 1.0);
+  vec3 directionalLightColor = vec3(1.0, 1.0, 1.0);
   vec3 eyeDirection = -normalize((uMVMatrix * verPos)).xyz;
-  vec3 directionalLightColor = vec3(0.5, 0.5, 0.5);
   float directionalLightAmount = max(0.0, dot(transformedNormal.xyz, lightDirection));
   vec3 reflectionDirection = reflect(lightDirection, transformedNormal.xyz);
   float specularAmount = max(0.0, dot(eyeDirection, reflectionDirection));

@@ -51,6 +51,6 @@ void main () {
   // float v = sdBox(vec3(fragCoord.x, fragCoord.y,.1), vec3(waveFormData.x, .5, .5));
   // gl_FragColor = vec4(v, v, v, 1.0);
   // gl_FragColor = color;
-  color = vec4(1.0, 1.0, 1.0, 1.0);
+  color = vec4(0.25, 0.25, 0.25, 1.0);
   gl_FragColor = vec4(color.rgb * vLighting, color.a);
 }
