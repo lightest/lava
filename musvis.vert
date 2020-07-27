@@ -4,6 +4,7 @@ attribute vec2 aTextureCoord;
 attribute float aTimeDomainMul;
 attribute vec3 aAdjacentV0;
 attribute vec3 aAdjacentV1;
+attribute vec3 aNormal;
 uniform mat4 uMVMatrix;
 uniform mat4 uProjectionMatrix;
 varying vec2 vTextureCoord;
@@ -18,6 +19,7 @@ void main () {
   vec3 edge0 = aAdjacentV0 - verPos.xyz;
   vec3 edge1 = aAdjacentV1 - verPos.xyz;
   vec3 faceNormal = cross(edge1, edge0);
+  faceNormal = aNormal;
   // faceNormal = vec3(0.0, 0.0, 1.0);
   // gl_Position = uProjectionMatrix * uMVMatrix * aVPos * aTimeDomainMul;
   // vFragPos = uMVMatrix * verPos;

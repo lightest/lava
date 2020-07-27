@@ -189,6 +189,7 @@ var mainModule = (function () {
       let vertices = [];
       let indices = [];
       let adjacent = [];
+      let normals;
       let aIdx = 0;
       for (i = 0; i < n; i++) {
         vertices.push(i % quadSize + offset, Math.floor(i / quadSize + offset), 0.0);
@@ -197,7 +198,7 @@ var mainModule = (function () {
         if (i % quadSize < quadSize - 1) {
           indices.push(
             i, i + 1, i + 1 + quadSize,
-            i, i + quadSize, i + 1 + quadSize
+            i, i + 1 + quadSize, i + quadSize
           );
         } else {
           continue;
@@ -218,35 +219,61 @@ var mainModule = (function () {
           adjacent.push(vertices[aIdx], vertices[aIdx + 1], vertices[aIdx + 2]);
         }
       }
-      return {vertices, indices, adjacent};
+      normals = this._calculateNormals(vertices, indices);
+
+      return {vertices, indices, adjacent, normals};
     }
 
-    // function assumes that vertices are the grid
     _calculateNormals (vertices = [], indices = []) {
-      let i = 0;
+      let i = 0, j = 0;
       let normals = [];
+      let finalNormals = [];
+      let storage;
       let edge0 = [], edge1 = [];
       let v0, v1, v2;
+      let normal;
       v0 = vec3.create();
       v1 = vec3.create();
       v2 = vec3.create();
       for (i = 0; i < indices.length; i += 3) {
         v0[0] = vertices[indices[i] * 3];
         v0[1] = vertices[indices[i] * 3 + 1];
-        v0[1] = vertices[indices[i] * 3 + 2];
+        v0[2] = vertices[indices[i] * 3 + 2];
 
-        v1[1] = vertices[indices[i + 1] * 3];
+        v1[0] = vertices[indices[i + 1] * 3];
         v1[1] = vertices[indices[i + 1] * 3 + 1];
-        v1[1] = vertices[indices[i + 1] * 3 + 2];
+        v1[2] = vertices[indices[i + 1] * 3 + 2];
 
-        v2[1] = vertices[indices[i + 2] * 3];
+        v2[0] = vertices[indices[i + 2] * 3];
         v2[1] = vertices[indices[i + 2] * 3 + 1];
-        v2[1] = vertices[indices[i + 2] * 3 + 2];
-        vec3.subtract(edge0, v1, v0);
+        v2[2] = vertices[indices[i + 2] * 3 + 2];
 
+        normal = vec3.create();
+
+        vec3.subtract(edge0, v1, v0);
+        vec3.subtract(edge1, v2, v0);
+        vec3.cross(normal, edge0, edge1);
+
+        for (j = i; j < i + 3; j++) {
+          storage = normals[indices[j]];
+          if (storage === undefined) {
+            storage = [];
+            normals[indices[j]] = storage;
+          }
+          storage.push(normal);
+        }
       }
-      for (i = 0; i < vertices.length; i++) {
+      for (i = 0; i < normals.length; i++) {
+        normal = vec3.create();
+        for (j = 0; j < normals[i].length; j++) {
+          normal[0] += normals[i][j][0];
+          normal[1] += normals[i][j][1];
+          normal[2] += normals[i][j][2];
+        }
+        vec3.normalize(normal, normal);
+        finalNormals.push(normal[0], normal[1], normal[2]);
       }
+      return finalNormals;
     }
 
     _createShader (src, type) {
@@ -286,7 +313,7 @@ var mainModule = (function () {
       this._gl.clearDepth(1.0);
       this._gl.enable(this._gl.DEPTH_TEST);
       this._gl.depthFunc(this._gl.LEQUAL);
-      let verticesAmount = 9;
+      let verticesAmount = 2304;
       let vertShader = this._createShader(vertexSrc, this._gl.VERTEX_SHADER);
       let fragShader = this._createShader(fragmentSrc, this._gl.FRAGMENT_SHADER);
       let program = this._gl.createProgram();
@@ -304,7 +331,8 @@ var mainModule = (function () {
           'aTextureCoord',
           'aTimeDomainMul',
           'aAdjacentV0',
-          'aAdjacentV1'
+          'aAdjacentV1',
+          'aNormal'
         ]),
         unifs: this._getUniformLocations(program, [
           'uProjectionMatrix',
@@ -359,6 +387,7 @@ var mainModule = (function () {
       this._texBuf = this._gl.createBuffer();
       this._indexBuf = this._gl.createBuffer();
       this._tdBuf = this._gl.createBuffer();
+      this._normalsBuf = this._gl.createBuffer();
       this._adjacentVerticesBuf = this._gl.createBuffer();
       this._gl.bindBuffer(this._gl.ELEMENT_ARRAY_BUFFER, this._indexBuf);
       this._gl.bufferData(this._gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), this._gl.STATIC_DRAW);
@@ -384,6 +413,12 @@ var mainModule = (function () {
       this._gl.enableVertexAttribArray(this._pi.attrs.aAdjacentV0);
       this._gl.vertexAttribPointer(this._pi.attrs.aAdjacentV1, 3, this._gl.FLOAT, false, 4 * 3, 4 * 3);
       this._gl.enableVertexAttribArray(this._pi.attrs.aAdjacentV1);
+
+      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._normalsBuf);
+      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(planeData.normals), this._gl.STATIC_DRAW);
+      this._gl.vertexAttribPointer(this._pi.attrs.aNormal, 3, this._gl.FLOAT, false, 0, 0);
+      this._gl.enableVertexAttribArray(this._pi.attrs.aNormal);
+
       this._gl.useProgram(program);
 
       let fov = 90 * Math.PI / 180;
@@ -445,6 +480,17 @@ var mainModule = (function () {
       r.readAsArrayBuffer(e.dataTransfer.files[0]);
     }
 
+    _applySineWaveToVertices (vertices, elapsedTime) {
+      let verticesAmount = vertices.length / 3;
+      let side = Math.sqrt(verticesAmount);
+      let i;
+      let row = 0;
+      for (i = 0; i < verticesAmount; i++) {
+        row = Math.floor(i / side);
+        vertices[i * 3 + 2] = Math.sin(elapsedTime * .007 + row * .1) * 2.0;
+      }
+    }
+
     play (buffer) {
       console.log('playing...');
       this.sourceNode.buffer = buffer;
@@ -462,11 +508,13 @@ var mainModule = (function () {
 
     render () {
       let i;
+      let normals;
       let x, y;
       let value;
       let avrgWaveForm = 0;
       let rgba = [0, 0, 0, .1];
       let c;
+      let availDataLen;
       let newVertexData = this._planeData.vertices.slice();
       let newAdjacentVerticesData = this._planeData.adjacent.slice();
       if (this.analyserNode === undefined) {
@@ -476,13 +524,16 @@ var mainModule = (function () {
       this.analyserNode.getByteTimeDomainData(this._waveFormData);
       // this.analyserNode.getFloatFrequencyData(this._frequencyData);
       this.analyserNode.getByteFrequencyData(this._frequencyData);
-      for (i = 0; i < this._waveFormDataFloat.length; i++) {
+      availDataLen = Math.min(newVertexData.length, this._waveFormDataFloat.length);
+      for (i = 0; i < availDataLen; i++) {
         newVertexData[i * 3 + 2] = this._waveFormDataFloat[i] * 4.0;
         newAdjacentVerticesData[i * 6 + 2] = this._waveFormDataFloat[i] * 4.0;
         newAdjacentVerticesData[3 + i * 6 + 2] = this._waveFormDataFloat[i] * 4.0;
       }
 
+      // this._applySineWaveToVertices(newVertexData, performance.now());
 
+      normals = this._calculateNormals(newVertexData, this._planeData.indices);
       this._processedData = new Uint8Array([...this._waveFormData, ...this._frequencyData]);
       // for (i = 0; i < this._dataLen; i++) {
       //   value = this._waveFormData[i] / 256;
@@ -522,6 +573,9 @@ var mainModule = (function () {
       this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(newVertexData), this._gl.STATIC_DRAW);
       this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._adjacentVerticesBuf);
       this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(newAdjacentVerticesData), this._gl.STATIC_DRAW);
+
+      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._normalsBuf);
+      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(normals), this._gl.STATIC_DRAW);
       // this._gl.texImage2D(
       //   this._gl.TEXTURE_2D,
       //   level,
