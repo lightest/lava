@@ -162,6 +162,7 @@ var mainModule = (function () {
       this._dataLen = this.analyserNode.fftSize;
       // this._frequencyData = new Float32Array(this._dataLen);
       this._frequencyData = new Uint8Array(this._dataLen);
+      this._frequencyDataFloat = new Float32Array(this._dataLen);
       this._waveFormDataFloat = new Float32Array(this._dataLen);
       this._waveFormData = new Uint8Array(this._dataLen);
       this._processedData = new Uint8Array(this._dataLen);
@@ -485,9 +486,11 @@ var mainModule = (function () {
       let side = Math.sqrt(verticesAmount);
       let i;
       let row = 0;
+      let a = 0;
       for (i = 0; i < verticesAmount; i++) {
         row = Math.floor(i / side);
-        vertices[i * 3 + 2] = Math.sin(elapsedTime * .007 + row * .2) * 2.0;
+        a = elapsedTime * .007 + row * .2;
+        vertices[i * 3 + 2] = Math.sin(a) * 2.0;
       }
     }
 
@@ -522,7 +525,7 @@ var mainModule = (function () {
       }
       this.analyserNode.getFloatTimeDomainData(this._waveFormDataFloat);
       this.analyserNode.getByteTimeDomainData(this._waveFormData);
-      // this.analyserNode.getFloatFrequencyData(this._frequencyData);
+      this.analyserNode.getFloatFrequencyData(this._frequencyDataFloat);
       this.analyserNode.getByteFrequencyData(this._frequencyData);
       availDataLen = Math.min(newVertexData.length, this._waveFormDataFloat.length);
       for (i = 0; i < availDataLen; i++) {
