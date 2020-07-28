@@ -7,6 +7,7 @@ attribute vec3 aAdjacentV1;
 attribute vec3 aNormal;
 uniform mat4 uMVMatrix;
 uniform mat4 uProjectionMatrix;
+uniform vec3 uLightPos;
 varying vec2 vTextureCoord;
 varying vec3 vFragPos;
 varying vec3 vLighting;
@@ -27,7 +28,7 @@ void main () {
   vec4 transformedPos = uProjectionMatrix * uMVMatrix * verPos;
   vec4 transformedNormal = normalize(uMVMatrix * vec4(faceNormal, 0.0));
   // vec4 transformedNormal = vec4(faceNormal, 1.0);
-  vec3 lightDirection = normalize(vec3(0.0, -1.0, 0.0));
+  vec3 lightDirection = normalize(uLightPos);
   vec3 ambientLight = vec3(.5, .5, .5);
   vec3 specularColor = vec3(1.0, 1.0, 1.0);
   vec3 directionalLightColor = vec3(1.0, 1.0, 1.0);

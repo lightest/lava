@@ -2,7 +2,6 @@ precision mediump float;
 uniform float t;
 uniform vec2 uWindowSize;
 uniform sampler2D uSampler;
-uniform vec3 uLightPos;
 varying vec2 vTextureCoord;
 varying vec3 vFragPos;
 varying vec3 vLighting;

@@ -16,9 +16,10 @@ var mainModule = (function () {
         this.mainLoop,
         this._handleKeydown
       ]);
-      this._lightPos = [0, 0, 0];
+      this._lightPos = [.75, -1, 0];
       this._drawCfg = {
-        drawMode: undefined
+        drawMode: undefined,
+        signalGain: 25.0
       };
     }
 
@@ -159,7 +160,9 @@ var mainModule = (function () {
       this.sourceNode.connect(this.gainNode);
       this.sourceNode.connect(this.analyserNode);
       this.gainNode.connect(this._audioCtx.destination);
+      this.analyserNode.fftSize = 128;
       this._dataLen = this.analyserNode.fftSize;
+      // this._dataLen = 64;
       // this._frequencyData = new Float32Array(this._dataLen);
       this._frequencyData = new Uint8Array(this._dataLen);
       this._frequencyDataFloat = new Float32Array(this._dataLen);
@@ -314,7 +317,7 @@ var mainModule = (function () {
       this._gl.clearDepth(1.0);
       this._gl.enable(this._gl.DEPTH_TEST);
       this._gl.depthFunc(this._gl.LEQUAL);
-      let verticesAmount = 2304;
+      let verticesAmount = 16384;
       let vertShader = this._createShader(vertexSrc, this._gl.VERTEX_SHADER);
       let fragShader = this._createShader(fragmentSrc, this._gl.FRAGMENT_SHADER);
       let program = this._gl.createProgram();
@@ -505,21 +508,38 @@ var mainModule = (function () {
       this.sourceNode.stop(0);
     }
 
-    update () {
+    _pushDataDownThePlane (data = []) {
+      if (data.length === 0) {
+        return;
+      }
+      let i;
 
+      let vertices = this._planeData.vertices;
+      let c = 0;
+      for (i = 0; i < data.length; i++) {
+        if (data[i] * this._drawCfg.signalGain === vertices[i * 3 + 2]) {
+          c++;
+        }
+      }
+      if (c === data.length) {
+        return;
+      }
+      let side = Math.sqrt(vertices.length / 3);
+      for (i = vertices.length - 1; i >= side * 3; i -= 3) {
+        vertices[i] = vertices[i - side * 3] * .99;
+        // vertices[i - 1] = vertices[i - 1 - side * 3];
+        // vertices[i - 2] = vertices[i - 2 - side * 3];
+      }
+      for (i = 0; i < data.length; i++) {
+        vertices[i * 3 + 2] = data[i] * this._drawCfg.signalGain;
+      }
     }
 
-    render () {
+    _copyAudioDataToPlane () {
       let i;
-      let normals;
-      let x, y;
-      let value;
-      let avrgWaveForm = 0;
-      let rgba = [0, 0, 0, .1];
-      let c;
       let availDataLen;
-      let newVertexData = this._planeData.vertices.slice();
-      let newAdjacentVerticesData = this._planeData.adjacent.slice();
+      let vertices = this._planeData.vertices;
+      // let newAdjacentVerticesData = this._planeData.adjacent.slice();
       if (this.analyserNode === undefined) {
         return;
       }
@@ -527,24 +547,34 @@ var mainModule = (function () {
       this.analyserNode.getByteTimeDomainData(this._waveFormData);
       this.analyserNode.getFloatFrequencyData(this._frequencyDataFloat);
       this.analyserNode.getByteFrequencyData(this._frequencyData);
-      availDataLen = Math.min(newVertexData.length, this._waveFormDataFloat.length);
-      for (i = 0; i < availDataLen; i++) {
-        newVertexData[i * 3 + 2] = this._waveFormDataFloat[i] * 4.0;
-        newAdjacentVerticesData[i * 6 + 2] = this._waveFormDataFloat[i] * 4.0;
-        newAdjacentVerticesData[3 + i * 6 + 2] = this._waveFormDataFloat[i] * 4.0;
-      }
-
-      // this._applySineWaveToVertices(newVertexData, performance.now());
-
-      normals = this._calculateNormals(newVertexData, this._planeData.indices);
+      availDataLen = Math.min(vertices.length, this._waveFormDataFloat.length);
       this._processedData = new Uint8Array([...this._waveFormData, ...this._frequencyData]);
+      this._pushDataDownThePlane(this._waveFormDataFloat);
+      // for (i = 0; i < availDataLen; i++) {
+      //   vertices[i * 3 + 2] = this._waveFormDataFloat[i] * 4.0;
+        // newAdjacentVerticesData[i * 6 + 2] = this._waveFormDataFloat[i] * 4.0;
+        // newAdjacentVerticesData[3 + i * 6 + 2] = this._waveFormDataFloat[i] * 4.0;
+      // }
+    }
+
+    update () {
+      let normals;
+      this._copyAudioDataToPlane();
+      normals = this._calculateNormals(this._planeData.vertices, this._planeData.indices);
+      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._posBuf);
+      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(this._planeData.vertices), this._gl.STATIC_DRAW);
+      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._normalsBuf);
+      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(normals), this._gl.STATIC_DRAW);
+    }
+
+    render () {
+      // this._applySineWaveToVertices(newVertexData, performance.now());
       // for (i = 0; i < this._dataLen; i++) {
       //   value = this._waveFormData[i] / 256;
       //   x = i * (1920 / 1024);
       //   c = Math.cos(x * .05 - this._audioCtx.currentTime /* * avrgWaveForm * .0001*/) * 1;
       //   y = (this.cnv.height - (this.cnv.height * value * 50 ) - 1)  - this.cnv.height * .5;
       // }
-      this._gl.clear(this._gl.COLOR_BUFFER_BIT | this._gl.DEPTH_BUFFER_BIT);
       this._gl.uniform1f(this._pi.unifs.t, performance.now());
       this._gl.uniform3fv(this._pi.unifs.uLightPos, this._lightPos);
       // mat4.rotate(
@@ -572,13 +602,11 @@ var mainModule = (function () {
       }
       this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._tdBuf);
       this._gl.bufferData(this._gl.ARRAY_BUFFER, this._waveFormDataFloat, this._gl.STATIC_DRAW);
-      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._posBuf);
-      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(newVertexData), this._gl.STATIC_DRAW);
-      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._adjacentVerticesBuf);
-      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(newAdjacentVerticesData), this._gl.STATIC_DRAW);
 
-      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._normalsBuf);
-      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(normals), this._gl.STATIC_DRAW);
+      // this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._adjacentVerticesBuf);
+      // this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(newAdjacentVerticesData), this._gl.STATIC_DRAW);
+
+
       // this._gl.texImage2D(
       //   this._gl.TEXTURE_2D,
       //   level,
@@ -603,6 +631,8 @@ var mainModule = (function () {
       );
       this._gl.activeTexture(this._gl.TEXTURE0);
       this._gl.uniform1i(this._pi.unifs.uSampler, 0);
+
+      this._gl.clear(this._gl.COLOR_BUFFER_BIT | this._gl.DEPTH_BUFFER_BIT);
       this._gl.drawElements(this._drawCfg.drawMode, this._pi.vertexCount, this._gl.UNSIGNED_SHORT, 0);
       // this._gl.drawArrays(this._gl.TRIANGLES, 0, 4);
     }
