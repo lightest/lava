@@ -194,13 +194,13 @@ var mainModule = (function () {
       } else {
         offset = -(quadSize - 1) * .5;
       }
-      let vertices = [];
+      let vertices = new Float32Array(n * 3);
       let indices = [];
-      let adjacent = [];
       let normals;
-      let aIdx = 0;
       for (i = 0; i < n; i++) {
-        vertices.push(i % quadSize + offset, Math.floor(i / quadSize + offset), 0.0);
+        vertices[i * 3] = i % quadSize + offset;
+        vertices[i * 3 + 1] = Math.floor(i / quadSize + offset);
+        vertices[i * 3 + 2] = 0.0;
       }
       for (i = 0; i < n - quadSize; i++) {
         if (i % quadSize < quadSize - 1) {
@@ -212,33 +212,21 @@ var mainModule = (function () {
           continue;
         }
       }
-      for (i = 0; i < n; i++) {
-        if (i % quadSize < quadSize - 1) {
-          // triangles have two adjacent vertices
-          // adding them to calc stuff in the vertex shader
-          aIdx = (i + 1) * 3;
-          adjacent.push(vertices[aIdx], vertices[aIdx + 1], vertices[aIdx + 2]);
-          aIdx = (i + 1 + quadSize) * 3;
-          adjacent.push(vertices[aIdx], vertices[aIdx + 1], vertices[aIdx + 2]);
-        } else {
-          aIdx = (i - 1) * 3;
-          adjacent.push(vertices[aIdx], vertices[aIdx + 1], vertices[aIdx + 2]);
-          aIdx = (i + quadSize) * 3;
-          adjacent.push(vertices[aIdx], vertices[aIdx + 1], vertices[aIdx + 2]);
-        }
-      }
       normals = this._calculateNormals(vertices, indices);
 
-      return {vertices, indices, adjacent, normals};
+      return {vertices, indices, normals};
     }
 
     _calculateNormals (vertices = [], indices = []) {
       let t = performance.now();
-      let i = 0, j = 0;
-      let normals = [];
-      let finalNormals = new Array(vertices.length).fill(0);
-      let storage;
-      let edge0 = [], edge1 = [];
+      let i = 0;
+      let finalNormals;
+      if (this._planeData === undefined) {
+        finalNormals = new Float32Array(vertices.length).fill(0);
+      } else {
+        finalNormals = this._planeData.normals.fill(0);
+      }
+      let edge0 = [0, 0, 0], edge1 = [0, 0, 0];
       let v0, v1, v2;
       let normal;
       // v0 = vec3.create();
@@ -261,7 +249,6 @@ var mainModule = (function () {
         v2[1] = vertices[indices[i + 2] * 3 + 1];
         v2[2] = vertices[indices[i + 2] * 3 + 2];
 
-        // normal = vec3.create();
         normal = [0, 0, 0];
 
         vec3.subtract(edge0, v1, v0);
@@ -271,33 +258,8 @@ var mainModule = (function () {
         finalNormals[indices[i] * 3] += normal[0];
         finalNormals[indices[i] * 3 + 1] += normal[1];
         finalNormals[indices[i] * 3 + 2] += normal[2];
-        // for (j = i; j < i + 3; j++) {
-        //   storage = normals[indices[j]];
-        //   if (storage === undefined) {
-        //     storage = [];
-        //     normals[indices[j]] = storage;
-        //     storage.push(normal);
-        //   } else {
-        //     storage[0][0] += normal[0];
-        //     storage[0][1] += normal[1];
-        //     storage[0][2] += normal[2];
-        //   }
-        // }
       }
-      // for (i = 0; i < normals.length; i++) {
-      //   // normal = vec3.create();
-      //   normal = [0, 0, 0];
-      //   for (j = 0; j < normals[i].length; j++) {
-      //     normal[0] += normals[i][j][0];
-      //     normal[1] += normals[i][j][1];
-      //     normal[2] += normals[i][j][2];
-      //   }
-      //   normal[0] /= normals[i].length;
-      //   normal[1] /= normals[i].length;
-      //   normal[2] /= normals[i].length;
-      //   vec3.normalize(normal, normal);
-      //   finalNormals.push(normal[0], normal[1], normal[2]);
-      // }
+
       // console.log('normals calc time', performance.now() - t);
       return finalNormals;
     }
@@ -427,7 +389,7 @@ var mainModule = (function () {
       this._gl.enableVertexAttribArray(this._pi.attrs.aTextureCoord);
 
       this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._posBuf);
-      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(planePos), this._gl.STATIC_DRAW);
+      this._gl.bufferData(this._gl.ARRAY_BUFFER, planePos, this._gl.STATIC_DRAW);
       this._gl.vertexAttribPointer(this._pi.attrs.aVPos, 3, this._gl.FLOAT, false, 0, 0);
       this._gl.enableVertexAttribArray(this._pi.attrs.aVPos);
 
@@ -436,15 +398,8 @@ var mainModule = (function () {
       // this._gl.vertexAttribPointer(this._pi.attrs.aTimeDomainMul, 1, this._gl.FLOAT, false, 0, 0);
       // this._gl.enableVertexAttribArray(this._pi.attrs.aTimeDomainMul);
 
-      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._adjacentVerticesBuf);
-      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(planeData.adjacentVertices), this._gl.STATIC_DRAW);
-      this._gl.vertexAttribPointer(this._pi.attrs.aAdjacentV0, 3, this._gl.FLOAT, false, 4 * 3, 0);
-      this._gl.enableVertexAttribArray(this._pi.attrs.aAdjacentV0);
-      this._gl.vertexAttribPointer(this._pi.attrs.aAdjacentV1, 3, this._gl.FLOAT, false, 4 * 3, 4 * 3);
-      this._gl.enableVertexAttribArray(this._pi.attrs.aAdjacentV1);
-
       this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._normalsBuf);
-      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(planeData.normals), this._gl.STATIC_DRAW);
+      this._gl.bufferData(this._gl.ARRAY_BUFFER, planeData.normals, this._gl.STATIC_DRAW);
       this._gl.vertexAttribPointer(this._pi.attrs.aNormal, 3, this._gl.FLOAT, false, 0, 0);
       this._gl.enableVertexAttribArray(this._pi.attrs.aNormal);
 
@@ -587,9 +542,9 @@ var mainModule = (function () {
       this._copyAudioDataToPlane();
       normals = this._calculateNormals(this._planeData.vertices, this._planeData.indices);
       this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._posBuf);
-      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(this._planeData.vertices), this._gl.STATIC_DRAW);
+      this._gl.bufferData(this._gl.ARRAY_BUFFER, this._planeData.vertices, this._gl.STATIC_DRAW);
       this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._normalsBuf);
-      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(normals), this._gl.STATIC_DRAW);
+      this._gl.bufferData(this._gl.ARRAY_BUFFER, normals, this._gl.STATIC_DRAW);
       this._gl.uniform3fv(this._pi.unifs.uAmbientLightColor, this._drawCfg.ambientLightColor);
       this._gl.uniform3fv(this._pi.unifs.uSpecLightColor, this._drawCfg.specularLightColor);
       this._gl.uniform3fv(this._pi.unifs.uDirLightColor, this._drawCfg.directionalLightColor);
