@@ -19,8 +19,8 @@ var mainModule = (function () {
       this._lightPos = new Float32Array([-1, -.1, 0]);
       this._drawCfg = {
         drawMode: undefined,
-        signalGain: 50.0,
-        fade: .97,
+        signalGain: 100.0,
+        fade: .975,
         ambientLightColor: new Float32Array([0.45, 0.1, 0]),
         specularLightColor: new Float32Array([1.3, 0.45, 0.27]),
         directionalLightColor: new Float32Array([1, 0.1, 0])
@@ -164,7 +164,7 @@ var mainModule = (function () {
       this.sourceNode.connect(this.gainNode);
       this.sourceNode.connect(this.analyserNode);
       this.gainNode.connect(this._audioCtx.destination);
-      this.analyserNode.fftSize = 128;
+      this.analyserNode.fftSize = 256;
       this._dataLen = this.analyserNode.fftSize;
       // this._dataLen = 64;
       // this._frequencyData = new Float32Array(this._dataLen);
@@ -236,7 +236,7 @@ var mainModule = (function () {
       let t = performance.now();
       let i = 0, j = 0;
       let normals = [];
-      let finalNormals = [];
+      let finalNormals = new Array(vertices.length).fill(0);
       let storage;
       let edge0 = [], edge1 = [];
       let v0, v1, v2;
@@ -268,29 +268,36 @@ var mainModule = (function () {
         vec3.subtract(edge1, v2, v0);
         vec3.cross(normal, edge0, edge1);
 
-        for (j = i; j < i + 3; j++) {
-          storage = normals[indices[j]];
-          if (storage === undefined) {
-            storage = [];
-            normals[indices[j]] = storage;
-          }
-          storage.push(normal);
-        }
+        finalNormals[indices[i] * 3] += normal[0];
+        finalNormals[indices[i] * 3 + 1] += normal[1];
+        finalNormals[indices[i] * 3 + 2] += normal[2];
+        // for (j = i; j < i + 3; j++) {
+        //   storage = normals[indices[j]];
+        //   if (storage === undefined) {
+        //     storage = [];
+        //     normals[indices[j]] = storage;
+        //     storage.push(normal);
+        //   } else {
+        //     storage[0][0] += normal[0];
+        //     storage[0][1] += normal[1];
+        //     storage[0][2] += normal[2];
+        //   }
+        // }
       }
-      for (i = 0; i < normals.length; i++) {
-        // normal = vec3.create();
-        normal = [0, 0, 0];
-        for (j = 0; j < normals[i].length; j++) {
-          normal[0] += normals[i][j][0];
-          normal[1] += normals[i][j][1];
-          normal[2] += normals[i][j][2];
-        }
-        normal[0] /= normals[i].length;
-        normal[1] /= normals[i].length;
-        normal[2] /= normals[i].length;
-        vec3.normalize(normal, normal);
-        finalNormals.push(normal[0], normal[1], normal[2]);
-      }
+      // for (i = 0; i < normals.length; i++) {
+      //   // normal = vec3.create();
+      //   normal = [0, 0, 0];
+      //   for (j = 0; j < normals[i].length; j++) {
+      //     normal[0] += normals[i][j][0];
+      //     normal[1] += normals[i][j][1];
+      //     normal[2] += normals[i][j][2];
+      //   }
+      //   normal[0] /= normals[i].length;
+      //   normal[1] /= normals[i].length;
+      //   normal[2] /= normals[i].length;
+      //   vec3.normalize(normal, normal);
+      //   finalNormals.push(normal[0], normal[1], normal[2]);
+      // }
       // console.log('normals calc time', performance.now() - t);
       return finalNormals;
     }
@@ -332,7 +339,7 @@ var mainModule = (function () {
       this._gl.clearDepth(1.0);
       this._gl.enable(this._gl.DEPTH_TEST);
       this._gl.depthFunc(this._gl.LEQUAL);
-      let verticesAmount = 16384;
+      let verticesAmount = 65536;//16384;
       let vertShader = this._createShader(vertexSrc, this._gl.VERTEX_SHADER);
       let fragShader = this._createShader(fragmentSrc, this._gl.FRAGMENT_SHADER);
       let program = this._gl.createProgram();
