@@ -16,10 +16,14 @@ var mainModule = (function () {
         this.mainLoop,
         this._handleKeydown
       ]);
-      this._lightPos = [.75, -1, 0];
+      this._lightPos = new Float32Array([-1, -.1, 0]);
       this._drawCfg = {
         drawMode: undefined,
-        signalGain: 25.0
+        signalGain: 50.0,
+        fade: .97,
+        ambientLightColor: new Float32Array([0.45, 0.1, 0]),
+        specularLightColor: new Float32Array([1.3, 0.45, 0.27]),
+        directionalLightColor: new Float32Array([1, 0.1, 0])
       };
     }
 
@@ -229,6 +233,7 @@ var mainModule = (function () {
     }
 
     _calculateNormals (vertices = [], indices = []) {
+      let t = performance.now();
       let i = 0, j = 0;
       let normals = [];
       let finalNormals = [];
@@ -236,9 +241,13 @@ var mainModule = (function () {
       let edge0 = [], edge1 = [];
       let v0, v1, v2;
       let normal;
-      v0 = vec3.create();
-      v1 = vec3.create();
-      v2 = vec3.create();
+      // v0 = vec3.create();
+      // v1 = vec3.create();
+      // v2 = vec3.create();
+
+      v0 = [0, 0, 0];
+      v1 = [0, 0, 0];
+      v2 = [0, 0, 0];
       for (i = 0; i < indices.length; i += 3) {
         v0[0] = vertices[indices[i] * 3];
         v0[1] = vertices[indices[i] * 3 + 1];
@@ -252,7 +261,8 @@ var mainModule = (function () {
         v2[1] = vertices[indices[i + 2] * 3 + 1];
         v2[2] = vertices[indices[i + 2] * 3 + 2];
 
-        normal = vec3.create();
+        // normal = vec3.create();
+        normal = [0, 0, 0];
 
         vec3.subtract(edge0, v1, v0);
         vec3.subtract(edge1, v2, v0);
@@ -268,15 +278,20 @@ var mainModule = (function () {
         }
       }
       for (i = 0; i < normals.length; i++) {
-        normal = vec3.create();
+        // normal = vec3.create();
+        normal = [0, 0, 0];
         for (j = 0; j < normals[i].length; j++) {
           normal[0] += normals[i][j][0];
           normal[1] += normals[i][j][1];
           normal[2] += normals[i][j][2];
         }
+        normal[0] /= normals[i].length;
+        normal[1] /= normals[i].length;
+        normal[2] /= normals[i].length;
         vec3.normalize(normal, normal);
         finalNormals.push(normal[0], normal[1], normal[2]);
       }
+      // console.log('normals calc time', performance.now() - t);
       return finalNormals;
     }
 
@@ -344,7 +359,10 @@ var mainModule = (function () {
           'uLightPos',
           't',
           'uWindowSize',
-          'uSampler'
+          'uSampler',
+          'uAmbientLightColor',
+          'uSpecLightColor',
+          'uDirLightColor'
         ]),
         drawData: {
           offset: 0,
@@ -406,10 +424,10 @@ var mainModule = (function () {
       this._gl.vertexAttribPointer(this._pi.attrs.aVPos, 3, this._gl.FLOAT, false, 0, 0);
       this._gl.enableVertexAttribArray(this._pi.attrs.aVPos);
 
-      this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._tdBuf);
-      this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(verticesAmount).fill(1.0), this._gl.STATIC_DRAW);
-      this._gl.vertexAttribPointer(this._pi.attrs.aTimeDomainMul, 1, this._gl.FLOAT, false, 0, 0);
-      this._gl.enableVertexAttribArray(this._pi.attrs.aTimeDomainMul);
+      // this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._tdBuf);
+      // this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(verticesAmount).fill(1.0), this._gl.STATIC_DRAW);
+      // this._gl.vertexAttribPointer(this._pi.attrs.aTimeDomainMul, 1, this._gl.FLOAT, false, 0, 0);
+      // this._gl.enableVertexAttribArray(this._pi.attrs.aTimeDomainMul);
 
       this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._adjacentVerticesBuf);
       this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(planeData.adjacentVertices), this._gl.STATIC_DRAW);
@@ -526,7 +544,7 @@ var mainModule = (function () {
       }
       let side = Math.sqrt(vertices.length / 3);
       for (i = vertices.length - 1; i >= side * 3; i -= 3) {
-        vertices[i] = vertices[i - side * 3] * .99;
+        vertices[i] = vertices[i - side * 3] * this._drawCfg.fade;
         // vertices[i - 1] = vertices[i - 1 - side * 3];
         // vertices[i - 2] = vertices[i - 2 - side * 3];
       }
@@ -565,6 +583,9 @@ var mainModule = (function () {
       this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(this._planeData.vertices), this._gl.STATIC_DRAW);
       this._gl.bindBuffer(this._gl.ARRAY_BUFFER, this._normalsBuf);
       this._gl.bufferData(this._gl.ARRAY_BUFFER, new Float32Array(normals), this._gl.STATIC_DRAW);
+      this._gl.uniform3fv(this._pi.unifs.uAmbientLightColor, this._drawCfg.ambientLightColor);
+      this._gl.uniform3fv(this._pi.unifs.uSpecLightColor, this._drawCfg.specularLightColor);
+      this._gl.uniform3fv(this._pi.unifs.uDirLightColor, this._drawCfg.directionalLightColor);
     }
 
     render () {
@@ -616,19 +637,19 @@ var mainModule = (function () {
       //   this._testImg
       // );
 
-      this._gl.texImage2D(
-        this._gl.TEXTURE_2D,
-        level,
-        internalFormat,
-        width,
-        height,
-        border,
-        srcFormat,
-        srcType,
-        this._processedData
-        // this._waveFormData
-        // new Uint8Array([0,0,255,255,0,255,0,255])
-      );
+      // this._gl.texImage2D(
+      //   this._gl.TEXTURE_2D,
+      //   level,
+      //   internalFormat,
+      //   width,
+      //   height,
+      //   border,
+      //   srcFormat,
+      //   srcType,
+      //   this._processedData
+      //   // this._waveFormData
+      //   // new Uint8Array([0,0,255,255,0,255,0,255])
+      // );
       this._gl.activeTexture(this._gl.TEXTURE0);
       this._gl.uniform1i(this._pi.unifs.uSampler, 0);
 
