@@ -11,7 +11,7 @@ var mainModule = (function () {
   class MainModule {
     constructor () {
       this.cnv = undefined;
-      this._useWASM = false;
+      this._useWASM = true;
       this._gl = undefined;
       this._debugData = {};
       this._debugEl = undefined;
@@ -90,9 +90,12 @@ var mainModule = (function () {
 
     _beforeUnload () {
       if (this._useWASM) {
-        Module.asm.free(this._wasmData.verticesPtr);
-        Module.asm.free(this._wasmData.indicesPtr);
-        Module.asm.free(this._wasmData.normalsPtr);
+        // Module.asm.free(this._wasmData.verticesPtr);
+        // Module.asm.free(this._wasmData.indicesPtr);
+        // Module.asm.free(this._wasmData.normalsPtr);
+        Module._free(this._wasmData.verticesPtr);
+        Module._free(this._wasmData.indicesPtr);
+        Module._free(this._wasmData.normalsPtr);
       }
     }
 
@@ -100,7 +103,7 @@ var mainModule = (function () {
       console.log(e.which);
       if (e.which === 32) {
         if (mainModule._audioData === undefined) {
-          fetch('./ps.mp3')
+          fetch('./tfiy.mp3')
             .then((resp) => {
               console.log('fetched music, processing...');
               return resp.arrayBuffer();
@@ -226,9 +229,12 @@ var mainModule = (function () {
       let vertices;
       let indices;
       let normals;
-      let verticesPtr = Module.asm.malloc(n * 3 * 4);
-      let indicesPtr = Module.asm.malloc(indicesLen * 4);
-      let normalsPtr = Module.asm.malloc(n * 3 * 4);
+      // let verticesPtr = Module.asm.malloc(n * 3 * 4);
+      // let indicesPtr = Module.asm.malloc(indicesLen * 4);
+      // let normalsPtr = Module.asm.malloc(n * 3 * 4);
+      let verticesPtr = Module._malloc(n * 3 * 4);
+      let indicesPtr = Module._malloc(indicesLen * 4);
+      let normalsPtr = Module._malloc(n * 3 * 4);
       for (i = 0; i < n; i++) {
         Module.HEAPF32[ verticesPtr / 4 + i * 3 ] = i % quadSize + offset;
         Module.HEAPF32[ verticesPtr / 4 + i * 3 + 1 ] = Math.floor(i / quadSize + offset);
@@ -246,7 +252,7 @@ var mainModule = (function () {
           entry += 6;
         }
       }
-      Module.asm.calculateNormals(verticesPtr, indicesPtr, indicesLen, normalsPtr);
+      Module._calculateNormals(verticesPtr, indicesPtr, indicesLen, n * 3, normalsPtr);
 
       vertices = new Float32Array(Module.HEAPF32.buffer, verticesPtr, n * 3);
       indices = new Uint32Array(Module.HEAPU32.buffer, indicesPtr, indicesLen);
@@ -646,12 +652,14 @@ var mainModule = (function () {
       this._copyAudioDataToPlane();
       let t = performance.now();
       if (this._useWASM) {
-        Module.asm.calculateNormals(
+        Module._calculateNormals(
           this._wasmData.verticesPtr,
           this._wasmData.indicesPtr,
           this._planeData.indices.length,
+          this._planeData.vertices.length,
           this._wasmData.normalsPtr
         );
+        // Module.asm.testPerf();
         this._planeData.normals = new Float32Array(Module.HEAPF32.buffer, this._wasmData.normalsPtr, this._planeData.normals.length);
         // console.log('normals calc took', performance.now() - t);
       } else {

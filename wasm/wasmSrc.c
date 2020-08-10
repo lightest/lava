@@ -4,6 +4,9 @@
 
 char str[4] = {'a', 'z', 'c', 'd'};
 float floats[4] = {1.0, 2.0, 3.0, 4.0};
+float vertices[65536 * 3] = {0};
+int indices[390150] = {0};
+float normals[65536 * 3] = {0};
 
 EMSCRIPTEN_KEEPALIVE
 char *getStrAddr () {
@@ -61,24 +64,55 @@ void calcNormals_test (float *vertices,
 }
 
 EMSCRIPTEN_KEEPALIVE
+void testPerf () {
+  int i;
+  float v0[3];
+  float v1[3];
+  float v2[3];
+  float normal[3];
+
+  for (i = 0; i < 390150; i += 3) {
+    v0[0] = vertices[indices[i] * 3];
+    v0[1] = vertices[indices[i] * 3 + 1];
+    v0[2] = vertices[indices[i] * 3 + 2];
+
+    v1[0] = vertices[indices[i + 1] * 3];
+    v1[1] = vertices[indices[i + 1] * 3 + 1];
+    v1[2] = vertices[indices[i + 1] * 3 + 2];
+
+    v2[0] = vertices[indices[i + 2] * 3];
+    v2[1] = vertices[indices[i + 2] * 3 + 1];
+    v2[2] = vertices[indices[i + 2] * 3 + 2];
+  }
+}
+
+EMSCRIPTEN_KEEPALIVE
 void calculateNormals (
   float *vertices,
   int *indices,
   int indicesAmount,
+  int verticesAmount,
   float *outNormals
 ) {
   int i = 0;
-  float edge0[3] = {0, 0, 0};
-  float edge1[3] = {0, 0, 0};
-  float v0[3] = {0, 0, 0};
-  float v1[3] = {0, 0, 0};
-  float v2[3] = {0, 0, 0};
-  float normal[3] = {0, 0, 0};
+  // float edge0[3] = {0, 0, 0};
+  // float edge1[3] = {0, 0, 0};
+  // float v0[3] = {0, 0, 0};
+  // float v1[3] = {0, 0, 0};
+  // float v2[3] = {0, 0, 0};
+  // float normal[3] = {0, 0, 0};
 
-  for (i = 0; i < indicesAmount; i += 3) {
-    outNormals[indices[i] * 3] = 0;
-    outNormals[indices[i] * 3 + 1] = 0;
-    outNormals[indices[i] * 3 + 2] = 0;
+  float edge0[3];
+  float edge1[3];
+  float v0[3];
+  float v1[3];
+  float v2[3];
+  float normal[3];
+
+  for (i = 0; i < verticesAmount; i += 3) {
+    outNormals[i] = 0;
+    outNormals[i + 1] = 0;
+    outNormals[i + 2] = 0;
   }
 
   for (i = 0; i < indicesAmount; i += 3) {
