@@ -12,6 +12,7 @@ var mainModule = (function () {
     constructor () {
       this.cnv = undefined;
       this._useWASM = true;
+      this._useLoadingEffect = false;
       this._gl = undefined;
       this._debugData = {};
       this._debugEl = undefined;
@@ -26,6 +27,8 @@ var mainModule = (function () {
       this._wasmData = undefined;
       this._planeData = undefined;
       this._lightPos = new Float32Array([-1, -.1, 0]);
+      // initial camera angle
+      this._mvValue = [-0.8763063549995422, -0.09027150273323059, 0.47322025895118713, 0, 0.48175373673439026, -0.16420340538024902, 0.8607845902442932, 0, 7.054787865001799e-10, 0.9822871685028076, 0.18738116323947906, 0, 14.69436264038086, 0.19634555280208588, -78.50071716308594, 1];
       this._drawCfg = {
         drawMode: undefined,
         signalGain: 100.0,
@@ -103,7 +106,7 @@ var mainModule = (function () {
       console.log(e.which);
       if (e.which === 32) {
         if (mainModule._audioData === undefined) {
-          fetch('./tfiy.mp3')
+          fetch('./h.mp3')
             .then((resp) => {
               console.log('fetched music, processing...');
               return resp.arrayBuffer();
@@ -178,22 +181,30 @@ var mainModule = (function () {
     }
 
     _setupAudioCtx () {
-      this._audioCtx = new AudioContext();
-      this.sourceNode = this._audioCtx.createBufferSource();
-      this.analyserNode = this._audioCtx.createAnalyser();
-      this.gainNode = this._audioCtx.createGain();
-      this.sourceNode.connect(this.gainNode);
-      this.sourceNode.connect(this.analyserNode);
-      this.gainNode.connect(this._audioCtx.destination);
-      this.analyserNode.fftSize = 256;
-      this._dataLen = this.analyserNode.fftSize;
-      // this._dataLen = 64;
-      // this._frequencyData = new Float32Array(this._dataLen);
-      this._frequencyData = new Uint8Array(this._dataLen);
-      this._frequencyDataFloat = new Float32Array(this._dataLen);
-      this._waveFormDataFloat = new Float32Array(this._dataLen);
-      this._waveFormData = new Uint8Array(this._dataLen);
-      this._processedData = new Uint8Array(this._dataLen);
+      if (this._audioCtx !== undefined) {
+        this.stopPlayBack();
+        this.sourceNode.disconnect();
+        this.sourceNode = this._audioCtx.createBufferSource();
+        this.sourceNode.connect(this.gainNode);
+        this.sourceNode.connect(this.analyserNode);
+      } else {
+        this._audioCtx = new AudioContext();
+        this.sourceNode = this._audioCtx.createBufferSource();
+        this.analyserNode = this._audioCtx.createAnalyser();
+        this.gainNode = this._audioCtx.createGain();
+        this.sourceNode.connect(this.gainNode);
+        this.sourceNode.connect(this.analyserNode);
+        this.gainNode.connect(this._audioCtx.destination);
+        this.analyserNode.fftSize = 256;
+        this._dataLen = this.analyserNode.fftSize;
+        // this._dataLen = 64;
+        // this._frequencyData = new Float32Array(this._dataLen);
+        this._frequencyData = new Uint8Array(this._dataLen);
+        this._frequencyDataFloat = new Float32Array(this._dataLen);
+        this._waveFormDataFloat = new Float32Array(this._dataLen);
+        this._waveFormData = new Uint8Array(this._dataLen);
+        this._processedData = new Uint8Array(this._dataLen);
+      }
     }
 
     async _fetchShaders () {
@@ -308,7 +319,7 @@ var mainModule = (function () {
       }
       let edge0 = [0, 0, 0], edge1 = [0, 0, 0];
       let v0, v1, v2;
-      let normal;
+      let normal = [0, 0, 0];
       // v0 = vec3.create();
       // v1 = vec3.create();
       // v2 = vec3.create();
@@ -329,8 +340,6 @@ var mainModule = (function () {
         v2[1] = vertices[indices[i + 2] * 3 + 1];
         v2[2] = vertices[indices[i + 2] * 3 + 2];
 
-        normal = [0, 0, 0];
-
         vec3.subtract(edge0, v1, v0);
         vec3.subtract(edge1, v2, v0);
         vec3.cross(normal, edge0, edge1);
@@ -338,6 +347,16 @@ var mainModule = (function () {
         finalNormals[indices[i] * 3] += normal[0];
         finalNormals[indices[i] * 3 + 1] += normal[1];
         finalNormals[indices[i] * 3 + 2] += normal[2];
+
+        // without these surface looks more like liquid/silk wich is what we want
+
+        // finalNormals[indices[i + 1] * 3] += normal[0];
+        // finalNormals[indices[i + 1] * 3 + 1] += normal[1];
+        // finalNormals[indices[i + 1] * 3 + 2] += normal[2];
+
+        // finalNormals[indices[i + 2] * 3] += normal[0];
+        // finalNormals[indices[i + 2] * 3 + 1] += normal[1];
+        // finalNormals[indices[i + 2] * 3 + 2] += normal[2];
       }
 
       // console.log('normals calc time', performance.now() - t);
@@ -507,6 +526,7 @@ var mainModule = (function () {
         Math.PI * -.15,
         [1, 0, 0]
       );
+      mat4.set(this._mvMat, ...this._mvValue);
       this._gl.uniform1i(this._pi.unifs.uSampler, 0);
       this._gl.uniformMatrix4fv(
         pi.unifs.uProjectionMatrix,
@@ -528,11 +548,13 @@ var mainModule = (function () {
       this._audioCtx.decodeAudioData(arrayBuffer, function (buffer) {
         mainModule._audioData = buffer;
         mainModule.play(buffer);
+        mainModule._useLoadingEffect = false;
       });
     }
 
     _handleFileDrop (e) {
       e.preventDefault();
+      mainModule._useLoadingEffect = true;
       mainModule._setupAudioCtx();
       let r = new FileReader();
       r.onload = function (readRes) {
@@ -542,7 +564,9 @@ var mainModule = (function () {
       r.readAsArrayBuffer(e.dataTransfer.files[0]);
     }
 
-    _applySineWaveToVertices (vertices, elapsedTime) {
+    _applySineWaveToVertices () {
+      let vertices = this._planeData.vertices;
+      let elapsedTime = performance.now();
       let verticesAmount = vertices.length / 3;
       let side = Math.sqrt(verticesAmount);
       let i;
@@ -550,8 +574,8 @@ var mainModule = (function () {
       let a = 0;
       for (i = 0; i < verticesAmount; i++) {
         row = Math.floor(i / side);
-        a = elapsedTime * .007 + row * .2;
-        vertices[i * 3 + 2] = Math.sin(a) * 2.0;
+        a = elapsedTime * .01 - row * .2;
+        vertices[i * 3 + 2] = Math.sin(a) * 3.0;
       }
     }
 
@@ -560,10 +584,17 @@ var mainModule = (function () {
       this.sourceNode.buffer = buffer;
       this.sourceNode.start(0);
       this.sourceNode.loop = true;
+      if (mainModule._audioCtx.state === 'suspended') {
+        mainModule._audioCtx.resume();
+      }
     }
 
     stopPlayBack () {
-      this.sourceNode.stop(0);
+      try {
+        this.sourceNode.stop(0);
+      } catch (e) {
+
+      }
     }
 
     _pushDataDownThePlaneWASM (data = []) {
@@ -651,6 +682,9 @@ var mainModule = (function () {
     update () {
       this._copyAudioDataToPlane();
       let t = performance.now();
+      if (this._useLoadingEffect) {
+        this._applySineWaveToVertices();
+      }
       if (this._useWASM) {
         Module._calculateNormals(
           this._wasmData.verticesPtr,

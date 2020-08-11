@@ -20,10 +20,7 @@ void main () {
   float mul = aTimeDomainMul * 2.0;
   // vec4 verPos = vec4(aVPos.x, aVPos.y, mul * 2.0, aVPos.w);
   vec4 verPos = aVPos;
-  vec3 edge0 = aAdjacentV0 - verPos.xyz;
-  vec3 edge1 = aAdjacentV1 - verPos.xyz;
-  vec3 faceNormal = cross(edge1, edge0);
-  faceNormal = aNormal;
+  vec3 faceNormal = aNormal;
   // faceNormal = vec3(0.0, 0.0, 1.0);
   // gl_Position = uProjectionMatrix * uMVMatrix * aVPos * aTimeDomainMul;
   // vFragPos = uMVMatrix * verPos;

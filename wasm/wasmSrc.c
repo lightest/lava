@@ -95,6 +95,7 @@ void calculateNormals (
   float *outNormals
 ) {
   int i = 0;
+  int idx0, idx1, idx2;
   // float edge0[3] = {0, 0, 0};
   // float edge1[3] = {0, 0, 0};
   // float v0[3] = {0, 0, 0};
@@ -116,6 +117,11 @@ void calculateNormals (
   }
 
   for (i = 0; i < indicesAmount; i += 3) {
+    // if (i % 6 == 0) {
+    //   outNormals[i] = 0;
+    //   outNormals[i + 1] = 0;
+    //   outNormals[i + 2] = 0;
+    // }
     v0[0] = vertices[indices[i] * 3];
     v0[1] = vertices[indices[i] * 3 + 1];
     v0[2] = vertices[indices[i] * 3 + 2];
@@ -135,5 +141,15 @@ void calculateNormals (
     outNormals[indices[i] * 3] += normal[0];
     outNormals[indices[i] * 3 + 1] += normal[1];
     outNormals[indices[i] * 3 + 2] += normal[2];
+
+    // without these surface looks more like liquid/silk wich is what we want
+
+    // outNormals[indices[i + 1] * 3] += normal[0];
+    // outNormals[indices[i + 1] * 3 + 1] += normal[1];
+    // outNormals[indices[i + 1] * 3 + 2] += normal[2];
+
+    // outNormals[indices[i + 2] * 3] += normal[0];
+    // outNormals[indices[i + 2] * 3 + 1] += normal[1];
+    // outNormals[indices[i + 2] * 3 + 2] += normal[2];
   }
 }
