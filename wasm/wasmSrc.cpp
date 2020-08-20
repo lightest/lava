@@ -1,22 +1,9 @@
 #include "stdio.h"
-
+#include <algorithm>
+#include "math.h"
 #include <emscripten/emscripten.h>
 
-char str[4] = {'a', 'z', 'c', 'd'};
-float floats[4] = {1.0, 2.0, 3.0, 4.0};
-float vertices[65536 * 3] = {0};
-int indices[390150] = {0};
-float normals[65536 * 3] = {0};
-
-EMSCRIPTEN_KEEPALIVE
-char *getStrAddr () {
-  return str;
-}
-
-EMSCRIPTEN_KEEPALIVE
-float *getFloatAddr () {
-  return floats;
-}
+extern "C" {//--disable-frame-rate-limit --disable-gpu-vsync
 
 void vec3Subtract (float *out, float *a, float *b) {
   out[0] = a[0] - b[0];
@@ -38,51 +25,28 @@ void vec3Cross (float *out, float *a, float *b) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-void printArray (float *arr, int len) {
-  int i = 0;
-  for (i = 0; i < len; i++) {
-    printf("%f, ", arr[i]);
+void updatePlaneData (float* waveFormData, int waveFormDataLen, float* verticesPtr, int verticesLen, float signalGain, float fade, int rowStep, float dt) {
+  dt /= 1000;
+  int i, j;
+  int row;
+  int dataLen = std::min(waveFormDataLen, verticesLen);
+  int side = sqrt(verticesLen / 3);
+  int rowsUpd = std::min((float)side, std::max(1.0f, floor(rowStep * dt)));
+  int rowStepPerFrame = side * 3 * rowsUpd;
+  float fadePower = pow(fade, rowsUpd);
+  // for (i = verticesLen - 1; i >= side * 3; i -= 3) {
+  //   row = floor(i / 3 / side);
+  //   verticesPtr[i] = verticesPtr[i - side * 3] * (1.0f - row / (side - 1));
+  // }
+
+  for (i = verticesLen - 1; i >= rowStepPerFrame; i -= 3) {
+    verticesPtr[i] = verticesPtr[i - rowStepPerFrame] * fadePower;// * pow(fade, floor(i / 3 / side) + 1);
   }
-  printf("\n");
-}
 
-EMSCRIPTEN_KEEPALIVE
-void printCharArr (char* arr, int len) {
-  int i = 0;
-  for (i = 0; i < len; i++) {
-    printf("%c", arr[i]);
-  }
-  printf("\n");
-}
-
-EMSCRIPTEN_KEEPALIVE
-void calcNormals_test (float *vertices,
-  int *indices,
-  int indicesAmount,
-  float *outNormals) {
-
-}
-
-EMSCRIPTEN_KEEPALIVE
-void testPerf () {
-  int i;
-  float v0[3];
-  float v1[3];
-  float v2[3];
-  float normal[3];
-
-  for (i = 0; i < 390150; i += 3) {
-    v0[0] = vertices[indices[i] * 3];
-    v0[1] = vertices[indices[i] * 3 + 1];
-    v0[2] = vertices[indices[i] * 3 + 2];
-
-    v1[0] = vertices[indices[i + 1] * 3];
-    v1[1] = vertices[indices[i + 1] * 3 + 1];
-    v1[2] = vertices[indices[i + 1] * 3 + 2];
-
-    v2[0] = vertices[indices[i + 2] * 3];
-    v2[1] = vertices[indices[i + 2] * 3 + 1];
-    v2[2] = vertices[indices[i + 2] * 3 + 2];
+  for (i = 0; i < dataLen; i++) {
+    for (j = 0; j < rowsUpd; j++) {
+      verticesPtr[(i + side * j) * 3 + 2] = waveFormData[i] * signalGain * pow(fade, j); // * sin(M_PI * j / rowsUpd) * 2.0;
+    }
   }
 }
 
@@ -95,14 +59,6 @@ void calculateNormals (
   float *outNormals
 ) {
   int i = 0;
-  int idx0, idx1, idx2;
-  // float edge0[3] = {0, 0, 0};
-  // float edge1[3] = {0, 0, 0};
-  // float v0[3] = {0, 0, 0};
-  // float v1[3] = {0, 0, 0};
-  // float v2[3] = {0, 0, 0};
-  // float normal[3] = {0, 0, 0};
-
   float edge0[3];
   float edge1[3];
   float v0[3];
@@ -118,9 +74,9 @@ void calculateNormals (
 
   for (i = 0; i < indicesAmount; i += 3) {
     // if (i % 6 == 0) {
-    //   outNormals[i] = 0;
-    //   outNormals[i + 1] = 0;
-    //   outNormals[i + 2] = 0;
+    //   outNormals[indices[i] * 3] = 0;
+    //   outNormals[indices[i] * 3 + 1] = 0;
+    //   outNormals[indices[i] * 3 + 2] = 0;
     // }
     v0[0] = vertices[indices[i] * 3];
     v0[1] = vertices[indices[i] * 3 + 1];
@@ -152,4 +108,6 @@ void calculateNormals (
     // outNormals[indices[i + 2] * 3 + 1] += normal[1];
     // outNormals[indices[i + 2] * 3 + 2] += normal[2];
   }
+}
+
 }

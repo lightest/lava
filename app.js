@@ -8,10 +8,16 @@ window.AudioContext = (function(){
 */
 
 var mainModule = (function () {
+
+  const FFT_SIZE = 256;
+  const NULL_FUNCTION = function () {};
+  const USE_WASM = true;
+
   class MainModule {
     constructor () {
       this.cnv = undefined;
-      this._useWASM = true;
+      this._dt = 0;
+      this._prevFrameTime = 0;
       this._useLoadingEffect = false;
       this._gl = undefined;
       this._debugData = {};
@@ -22,21 +28,38 @@ var mainModule = (function () {
       this._bindFuncs([
         this.mainLoop,
         this._handleKeydown,
-        this._beforeUnload
+        this._beforeUnload,
+        this._handleResize
       ]);
       this._wasmData = undefined;
       this._planeData = undefined;
       this._lightPos = new Float32Array([-1, -.1, 0]);
       // initial camera angle
-      this._mvValue = [-0.8763063549995422, -0.09027150273323059, 0.47322025895118713, 0, 0.48175373673439026, -0.16420340538024902, 0.8607845902442932, 0, 7.054787865001799e-10, 0.9822871685028076, 0.18738116323947906, 0, 14.69436264038086, 0.19634555280208588, -78.50071716308594, 1];
+      // this._mvValue = [-0.8763063549995422, -0.09027150273323059, 0.47322025895118713, 0, 0.48175373673439026, -0.16420340538024902, 0.8607845902442932, 0, 7.054787865001799e-10, 0.9822871685028076, 0.18738116323947906, 0, 14.69436264038086, 0.19634555280208588, -78.50071716308594, 1];
+      // this._mvValue = [-0.7903044819831848, -0.12541374564170837, 0.5997409224510193, 0, 0.6126261353492737, -0.17828181385993958, 0.7700031995773315, 0, 0.010353894904255867, 0.9759542942047119, 0.2177286297082901, 0, 23.398456573486328, -2.9167048931121826, -104.4347915649414, 1];
+      this._mvValue = [-0.7706912159919739, -0.13094453513622284, 0.6236085295677185, 0, 0.6352150440216064, -0.23522524535655975, 0.7356432676315308, 0, 0.05035998299717903, 0.9630796313285828, 0.2644639313220978, 0, 2.104166030883789, -7.903982162475586, -76.04193878173828, 1];
       this._drawCfg = {
         drawMode: undefined,
         signalGain: 100.0,
         fade: .975,
+        rowStepPerSec: 200,
         ambientLightColor: new Float32Array([0.45, 0.1, 0]),
         specularLightColor: new Float32Array([1.3, 0.45, 0.27]),
         directionalLightColor: new Float32Array([1, 0.1, 0])
       };
+
+      this._generatePlaneData = NULL_FUNCTION;
+      this._pushDataDownThePlane = NULL_FUNCTION;
+      this._calculateNormals = NULL_FUNCTION;
+      if (USE_WASM) {
+        this._generatePlaneData = this._generatePlaneDataWASM;
+        this._pushDataDownThePlane = this._pushDataDownThePlaneWASM;
+        this._calculateNormals = this._calculateNormalsWASM;
+      } else {
+        this._generatePlaneData = this._generatePlaneDataJS;
+        this._pushDataDownThePlane = this._pushDataDownThePlaneJS;
+        this._calculateNormals = this._calculateNormalsJS;
+      }
     }
 
     init () {
@@ -73,15 +96,7 @@ var mainModule = (function () {
 
       window.addEventListener('keydown', this._binded._handleKeydown);
       window.addEventListener('beforeunload', this._binded._beforeUnload);
-
-      window.addEventListener('resize', (e) => {
-        this.cnv.width = document.documentElement.clientWidth;
-        this.cnv.height = document.documentElement.clientHeight;
-        if (this._gl) {
-          this._gl.viewport(0, 0, this.cnv.width, this.cnv.height);
-          this._gl.uniform2fv(this._pi.unifs.uWindowSize, [this.cnv.width, this.cnv.height]);
-        }
-      });
+      window.addEventListener('resize', this._binded._handleResize);
     }
 
     _bindFuncs (methods = []) {
@@ -92,7 +107,7 @@ var mainModule = (function () {
     }
 
     _beforeUnload () {
-      if (this._useWASM) {
+      if (USE_WASM) {
         // Module.asm.free(this._wasmData.verticesPtr);
         // Module.asm.free(this._wasmData.indicesPtr);
         // Module.asm.free(this._wasmData.normalsPtr);
@@ -102,11 +117,20 @@ var mainModule = (function () {
       }
     }
 
+    _handleResize (e) {
+      this.cnv.width = document.documentElement.clientWidth;
+      this.cnv.height = document.documentElement.clientHeight;
+      if (this._gl) {
+        this._gl.viewport(0, 0, this.cnv.width, this.cnv.height);
+        this._gl.uniform2fv(this._pi.unifs.uWindowSize, [this.cnv.width, this.cnv.height]);
+      }
+    }
+
     _handleKeydown (e) {
       console.log(e.which);
       if (e.which === 32) {
         if (mainModule._audioData === undefined) {
-          fetch('./h.mp3')
+          fetch('./sc.mp3')
             .then((resp) => {
               console.log('fetched music, processing...');
               return resp.arrayBuffer();
@@ -195,7 +219,7 @@ var mainModule = (function () {
         this.sourceNode.connect(this.gainNode);
         this.sourceNode.connect(this.analyserNode);
         this.gainNode.connect(this._audioCtx.destination);
-        this.analyserNode.fftSize = 256;
+        this.analyserNode.fftSize = FFT_SIZE;
         this._dataLen = this.analyserNode.fftSize;
         // this._dataLen = 64;
         // this._frequencyData = new Float32Array(this._dataLen);
@@ -246,6 +270,7 @@ var mainModule = (function () {
       let verticesPtr = Module._malloc(n * 3 * 4);
       let indicesPtr = Module._malloc(indicesLen * 4);
       let normalsPtr = Module._malloc(n * 3 * 4);
+      let waveFormPtr = Module._malloc(FFT_SIZE * 4);
       for (i = 0; i < n; i++) {
         Module.HEAPF32[ verticesPtr / 4 + i * 3 ] = i % quadSize + offset;
         Module.HEAPF32[ verticesPtr / 4 + i * 3 + 1 ] = Math.floor(i / quadSize + offset);
@@ -269,11 +294,11 @@ var mainModule = (function () {
       indices = new Uint32Array(Module.HEAPU32.buffer, indicesPtr, indicesLen);
       normals = new Float32Array(Module.HEAPF32.buffer, normalsPtr, n * 3);
 
-      this._wasmData = {verticesPtr, indicesPtr, normalsPtr};
+      this._wasmData = {verticesPtr, indicesPtr, normalsPtr, waveFormPtr};
       this._planeData = {vertices, indices, normals};
     }
 
-    _generatePlaneData (n = 9) {
+    _generatePlaneDataJS (n = 9) {
       let i;
       let quadSize = Math.sqrt(n);
       let offset = 0;
@@ -304,11 +329,20 @@ var mainModule = (function () {
         }
       }
       normals = this._calculateNormals(vertices, indices);
-
-      return {vertices, indices, normals};
+      this._planeData = {vertices, indices, normals};
     }
 
-    _calculateNormals (vertices = [], indices = []) {
+    _calculateNormalsWASM () {
+      Module._calculateNormals(
+        this._wasmData.verticesPtr,
+        this._wasmData.indicesPtr,
+        this._planeData.indices.length,
+        this._planeData.vertices.length,
+        this._wasmData.normalsPtr
+      );
+    }
+
+    _calculateNormalsJS (vertices = [], indices = []) {
       let t = performance.now();
       let i = 0;
       let finalNormals;
@@ -400,7 +434,7 @@ var mainModule = (function () {
       this._gl.clearDepth(1.0);
       this._gl.enable(this._gl.DEPTH_TEST);
       this._gl.depthFunc(this._gl.LEQUAL);
-      let verticesAmount = 256 ** 2;
+      let verticesAmount = FFT_SIZE ** 2;
       let vertShader = this._createShader(vertexSrc, this._gl.VERTEX_SHADER);
       let fragShader = this._createShader(fragmentSrc, this._gl.FRAGMENT_SHADER);
       let program = this._gl.createProgram();
@@ -443,11 +477,7 @@ var mainModule = (function () {
       this._gl.texParameteri(this._gl.TEXTURE_2D, this._gl.TEXTURE_WRAP_S, this._gl.CLAMP_TO_EDGE);
       this._gl.texParameteri(this._gl.TEXTURE_2D, this._gl.TEXTURE_WRAP_T, this._gl.CLAMP_TO_EDGE);
       this._gl.texParameteri(this._gl.TEXTURE_2D, this._gl.TEXTURE_MIN_FILTER, this._gl.LINEAR);
-      if (this._useWASM) {
-        this._generatePlaneDataWASM(verticesAmount);
-      } else {
-        this._planeData = this._generatePlaneData(verticesAmount);
-      }
+      this._generatePlaneData(verticesAmount);
       // let planePos = [
       //   -1.0, -1.0,  1.0,
       //   1.0, -1.0,  1.0,
@@ -598,36 +628,47 @@ var mainModule = (function () {
     }
 
     _pushDataDownThePlaneWASM (data = []) {
-      if (data.length === 0) {
-        return;
-      }
-      let i;
-      let vertices = this._planeData.vertices;
-      let c = 0;
-      for (i = 0; i < data.length; i++) {
-        if (data[i] * this._drawCfg.signalGain === vertices[i * 3 + 2]) {
-          c++;
-        }
-      }
-      if (c === data.length) {
-        return;
-      }
-      let dataLen = Math.min(data.length, vertices.length / 3);
-      let side = Math.sqrt(vertices.length / 3);
-      let verticesPtr = this._wasmData.verticesPtr;
-      for (i = vertices.length - 1; i >= side * 3; i -= 3) {
-        Module.HEAPF32[verticesPtr / 4 + i] = vertices[i - side * 3] * this._drawCfg.fade;
-        vertices[i] = vertices[i - side * 3] * this._drawCfg.fade;
-        // vertices[i - 1] = vertices[i - 1 - side * 3];
-        // vertices[i - 2] = vertices[i - 2 - side * 3];
-      }
-      for (i = 0; i < dataLen; i++) {
-        Module.HEAPF32[verticesPtr / 4 + i * 3 + 2] = data[i] * this._drawCfg.signalGain;
-        vertices[i * 3 + 2] = data[i] * this._drawCfg.signalGain;
-      }
+      Module.HEAPF32.set(data, this._wasmData.waveFormPtr / 4);
+      Module._updatePlaneData(
+        this._wasmData.waveFormPtr,
+        FFT_SIZE,
+        this._wasmData.verticesPtr,
+        this._planeData.vertices.length,
+        this._drawCfg.signalGain,
+        this._drawCfg.fade,
+        this._drawCfg.rowStepPerSec,
+        this._dt
+      );
+      // if (data.length === 0) {
+      //   return;
+      // }
+      // let i;
+      // let vertices = this._planeData.vertices;
+      // let c = 0;
+      // for (i = 0; i < data.length; i++) {
+      //   if (data[i] * this._drawCfg.signalGain === vertices[i * 3 + 2]) {
+      //     c++;
+      //   }
+      // }
+      // if (c === data.length) {
+      //   return;
+      // }
+      // let dataLen = Math.min(data.length, vertices.length / 3);
+      // let side = Math.sqrt(vertices.length / 3);
+      // let verticesPtr = this._wasmData.verticesPtr;
+      // for (i = vertices.length - 1; i >= side * 3; i -= 3) {
+      //   Module.HEAPF32[verticesPtr / 4 + i] = vertices[i - side * 3] * this._drawCfg.fade;
+      //   vertices[i] = vertices[i - side * 3] * this._drawCfg.fade;
+      //   // vertices[i - 1] = vertices[i - 1 - side * 3];
+      //   // vertices[i - 2] = vertices[i - 2 - side * 3];
+      // }
+      // for (i = 0; i < dataLen; i++) {
+      //   Module.HEAPF32[verticesPtr / 4 + i * 3 + 2] = data[i] * this._drawCfg.signalGain;
+      //   vertices[i * 3 + 2] = data[i] * this._drawCfg.signalGain;
+      // }
     }
 
-    _pushDataDownThePlane (data = []) {
+    _pushDataDownThePlaneJS (data = []) {
       if (data.length === 0) {
         return;
       }
@@ -667,11 +708,7 @@ var mainModule = (function () {
       this.analyserNode.getByteFrequencyData(this._frequencyData);
       availDataLen = Math.min(vertices.length, this._waveFormDataFloat.length);
       this._processedData = new Uint8Array([...this._waveFormData, ...this._frequencyData]);
-      if (this._useWASM) {
-        this._pushDataDownThePlaneWASM(this._waveFormDataFloat);
-      } else {
-        this._pushDataDownThePlane(this._waveFormDataFloat);
-      }
+      this._pushDataDownThePlane(this._waveFormDataFloat);
       // for (i = 0; i < availDataLen; i++) {
       //   vertices[i * 3 + 2] = this._waveFormDataFloat[i] * 4.0;
         // newAdjacentVerticesData[i * 6 + 2] = this._waveFormDataFloat[i] * 4.0;
@@ -681,20 +718,14 @@ var mainModule = (function () {
 
     update () {
       this._copyAudioDataToPlane();
-      let t = performance.now();
       if (this._useLoadingEffect) {
         this._applySineWaveToVertices();
       }
-      if (this._useWASM) {
-        Module._calculateNormals(
-          this._wasmData.verticesPtr,
-          this._wasmData.indicesPtr,
-          this._planeData.indices.length,
-          this._planeData.vertices.length,
-          this._wasmData.normalsPtr
-        );
+      if (USE_WASM) {
+        this._calculateNormals();
         // Module.asm.testPerf();
         this._planeData.normals = new Float32Array(Module.HEAPF32.buffer, this._wasmData.normalsPtr, this._planeData.normals.length);
+        this._planeData.vertices = new Float32Array(Module.HEAPF32.buffer, this._wasmData.verticesPtr, this._planeData.vertices.length);
         // console.log('normals calc took', performance.now() - t);
       } else {
         this._calculateNormals(this._planeData.vertices, this._planeData.indices);
@@ -780,6 +811,9 @@ var mainModule = (function () {
 
     mainLoop () {
       requestAnimationFrame(this._binded.mainLoop);
+      let t = performance.now();
+      this._dt = t - this._prevFrameTime;
+      this._prevFrameTime = performance.now();
       this.update();
       this.render();
     }
