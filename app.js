@@ -29,7 +29,8 @@ var mainModule = (function () {
         this.mainLoop,
         this._handleKeydown,
         this._beforeUnload,
-        this._handleResize
+        this._handleResize,
+        this._handleProgressClick
       ]);
       this._wasmData = undefined;
       this._planeData = undefined;
@@ -94,6 +95,9 @@ var mainModule = (function () {
           this.mainLoop();
         });
 
+      let progressBar = document.querySelector('.progress');
+      this._fillDOM = progressBar.querySelector('.fill');
+      progressBar.addEventListener('click', this._binded._handleProgressClick);
       window.addEventListener('keydown', this._binded._handleKeydown);
       window.addEventListener('beforeunload', this._binded._beforeUnload);
       window.addEventListener('resize', this._binded._handleResize);
@@ -204,13 +208,27 @@ var mainModule = (function () {
       }
     }
 
+    _handleProgressClick (e) {
+      if (this._audioData === undefined) {
+        return;
+      }
+      let s = e.clientX / e.currentTarget.clientWidth;
+      this.seek(s * this._audioData.duration);
+      this._fillDOM.style.width = `${s * 100}%`;
+    }
+
+    _createNewSourceNode () {
+      this.stopPlayBack();
+      this.sourceNode.disconnect();
+      this.sourceNode = this._audioCtx.createBufferSource();
+      this.sourceNode.connect(this.gainNode);
+      this.sourceNode.connect(this.analyserNode);
+      this.sourceNode.loop = true;
+    }
+
     _setupAudioCtx () {
       if (this._audioCtx !== undefined) {
-        this.stopPlayBack();
-        this.sourceNode.disconnect();
-        this.sourceNode = this._audioCtx.createBufferSource();
-        this.sourceNode.connect(this.gainNode);
-        this.sourceNode.connect(this.analyserNode);
+        this._createNewSourceNode();
       } else {
         this._audioCtx = new AudioContext();
         this.sourceNode = this._audioCtx.createBufferSource();
@@ -613,7 +631,6 @@ var mainModule = (function () {
       console.log('playing...');
       this.sourceNode.buffer = buffer;
       this.sourceNode.start(0);
-      this.sourceNode.loop = true;
       if (mainModule._audioCtx.state === 'suspended') {
         mainModule._audioCtx.resume();
       }
@@ -625,6 +642,13 @@ var mainModule = (function () {
       } catch (e) {
 
       }
+    }
+
+    seek (time = 0) {
+      time = Math.min(time, this._audioData.duration);
+      this._createNewSourceNode();
+      this.sourceNode.buffer = this._audioData;
+      this.sourceNode.start(0, time);
     }
 
     _pushDataDownThePlaneWASM (data = []) {
@@ -806,6 +830,9 @@ var mainModule = (function () {
 
       this._gl.clear(this._gl.COLOR_BUFFER_BIT | this._gl.DEPTH_BUFFER_BIT);
       this._gl.drawElements(this._drawCfg.drawMode, this._planeData.indices.length, this._gl.UNSIGNED_INT, 0);
+      if (this._audioData) {
+        this._fillDOM.style.width = `${(this._audioCtx.currentTime / this._audioData.duration) * 100}%`;
+      }
       // this._gl.drawArrays(this._gl.TRIANGLES, 0, 4);
     }
 
