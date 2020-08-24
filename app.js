@@ -12,11 +12,13 @@ var mainModule = (function () {
   const FFT_SIZE = 256;
   const NULL_FUNCTION = function () {};
   const USE_WASM = true;
+  const VOLUME_CHANGE = .05;
 
   class MainModule {
     constructor () {
       this.cnv = undefined;
       this._dt = 0;
+      this._playTime = 0;
       this._prevFrameTime = 0;
       this._useLoadingEffect = false;
       this._gl = undefined;
@@ -30,7 +32,8 @@ var mainModule = (function () {
         this._handleKeydown,
         this._beforeUnload,
         this._handleResize,
-        this._handleProgressClick
+        this._handleProgressClick,
+        this._handleMouseWheel
       ]);
       this._wasmData = undefined;
       this._planeData = undefined;
@@ -38,7 +41,8 @@ var mainModule = (function () {
       // initial camera angle
       // this._mvValue = [-0.8763063549995422, -0.09027150273323059, 0.47322025895118713, 0, 0.48175373673439026, -0.16420340538024902, 0.8607845902442932, 0, 7.054787865001799e-10, 0.9822871685028076, 0.18738116323947906, 0, 14.69436264038086, 0.19634555280208588, -78.50071716308594, 1];
       // this._mvValue = [-0.7903044819831848, -0.12541374564170837, 0.5997409224510193, 0, 0.6126261353492737, -0.17828181385993958, 0.7700031995773315, 0, 0.010353894904255867, 0.9759542942047119, 0.2177286297082901, 0, 23.398456573486328, -2.9167048931121826, -104.4347915649414, 1];
-      this._mvValue = [-0.7706912159919739, -0.13094453513622284, 0.6236085295677185, 0, 0.6352150440216064, -0.23522524535655975, 0.7356432676315308, 0, 0.05035998299717903, 0.9630796313285828, 0.2644639313220978, 0, 2.104166030883789, -7.903982162475586, -76.04193878173828, 1];
+      // this._mvValue = [-0.7706912159919739, -0.13094453513622284, 0.6236085295677185, 0, 0.6352150440216064, -0.23522524535655975, 0.7356432676315308, 0, 0.05035998299717903, 0.9630796313285828, 0.2644639313220978, 0, 2.104166030883789, -7.903982162475586, -76.04193878173828, 1];
+      this._mvValue = [-0.7708284258842468, -0.1328291893005371, 0.6230401396751404, 0, 0.6333219408988953, -0.2653306722640991, 0.7269822955131531, 0, 0.06874717772006989, 0.9549638032913208, 0.28864800930023193, 0, -7.913511753082275, 3.797915458679199, -95.43157196044922, 1];
       this._drawCfg = {
         drawMode: undefined,
         signalGain: 100.0,
@@ -95,12 +99,12 @@ var mainModule = (function () {
           this.mainLoop();
         });
 
-      let progressBar = document.querySelector('.progress');
-      this._fillDOM = progressBar.querySelector('.fill');
-      progressBar.addEventListener('click', this._binded._handleProgressClick);
+      this._progressBar = document.querySelector('.progress');
+      document.querySelector('.progress-wrap').addEventListener('click', this._binded._handleProgressClick);
       window.addEventListener('keydown', this._binded._handleKeydown);
       window.addEventListener('beforeunload', this._binded._beforeUnload);
       window.addEventListener('resize', this._binded._handleResize);
+      window.addEventListener('wheel', this._binded._handleMouseWheel);
     }
 
     _bindFuncs (methods = []) {
@@ -134,7 +138,7 @@ var mainModule = (function () {
       console.log(e.which);
       if (e.which === 32) {
         if (mainModule._audioData === undefined) {
-          fetch('./sc.mp3')
+          fetch('./Scott Pilgrim VS. The World Soundtrack - 01 We Are Sex Bob-omb.mp3')
             .then((resp) => {
               console.log('fetched music, processing...');
               return resp.arrayBuffer();
@@ -208,13 +212,19 @@ var mainModule = (function () {
       }
     }
 
+    _handleMouseWheel (e) {
+      let curVal = this.gainNode.gain.value;
+      curVal -= VOLUME_CHANGE * Math.sign(e.deltaY);
+      curVal = Math.max(0, Math.min(1, curVal));
+      this.gainNode.gain.setValueAtTime(curVal, this._audioCtx.currentTime);
+    }
+
     _handleProgressClick (e) {
       if (this._audioData === undefined) {
         return;
       }
       let s = e.clientX / e.currentTarget.clientWidth;
       this.seek(s * this._audioData.duration);
-      this._fillDOM.style.width = `${s * 100}%`;
     }
 
     _createNewSourceNode () {
@@ -264,7 +274,7 @@ var mainModule = (function () {
       let quadSize = Math.sqrt(n);
       let offset = 0;
       // for n = 9:
-      // out of 9 vertices we'll visit only 4 of them,
+      // out of 9 vertices we'll visit only 4,
       // subtracting edge on the top and on the right.
       // Each of 4 vertices will generate 6 indices entries,
       // thus indicesLen = (amountOfVertices - twoEdgesWithOneSharedVertex) * 6;
@@ -446,6 +456,10 @@ var mainModule = (function () {
       return locs;
     }
 
+    _positionPlaneBeforeCamera () {
+      mat4.set(this._mvMat, ...this._mvValue);
+    }
+
     _setupWebgl (vertexSrc, fragmentSrc) {
       this._gl = this.cnv.getContext('webgl2');
       this._gl.clearColor(0, 0, 0, 1);
@@ -563,18 +577,7 @@ var mainModule = (function () {
         zNear,
         zFar
       );
-      mat4.translate(
-        this._mvMat,
-        this._mvMat,
-        [.0, .0, -70.0]
-      );
-      mat4.rotate(
-        this._mvMat,
-        this._mvMat,
-        Math.PI * -.15,
-        [1, 0, 0]
-      );
-      mat4.set(this._mvMat, ...this._mvValue);
+      this._positionPlaneBeforeCamera();
       this._gl.uniform1i(this._pi.unifs.uSampler, 0);
       this._gl.uniformMatrix4fv(
         pi.unifs.uProjectionMatrix,
@@ -631,6 +634,8 @@ var mainModule = (function () {
       console.log('playing...');
       this.sourceNode.buffer = buffer;
       this.sourceNode.start(0);
+      this._playTime = 0;
+      this._newBufferPlayStartTime = performance.now();
       if (mainModule._audioCtx.state === 'suspended') {
         mainModule._audioCtx.resume();
       }
@@ -649,6 +654,7 @@ var mainModule = (function () {
       this._createNewSourceNode();
       this.sourceNode.buffer = this._audioData;
       this.sourceNode.start(0, time);
+      this._playTime = time;
     }
 
     _pushDataDownThePlaneWASM (data = []) {
@@ -719,10 +725,6 @@ var mainModule = (function () {
     }
 
     _copyAudioDataToPlane () {
-      let i;
-      let availDataLen;
-      let vertices = this._planeData.vertices;
-      // let newAdjacentVerticesData = this._planeData.adjacent.slice();
       if (this.analyserNode === undefined) {
         return;
       }
@@ -730,14 +732,8 @@ var mainModule = (function () {
       this.analyserNode.getByteTimeDomainData(this._waveFormData);
       this.analyserNode.getFloatFrequencyData(this._frequencyDataFloat);
       this.analyserNode.getByteFrequencyData(this._frequencyData);
-      availDataLen = Math.min(vertices.length, this._waveFormDataFloat.length);
       this._processedData = new Uint8Array([...this._waveFormData, ...this._frequencyData]);
       this._pushDataDownThePlane(this._waveFormDataFloat);
-      // for (i = 0; i < availDataLen; i++) {
-      //   vertices[i * 3 + 2] = this._waveFormDataFloat[i] * 4.0;
-        // newAdjacentVerticesData[i * 6 + 2] = this._waveFormDataFloat[i] * 4.0;
-        // newAdjacentVerticesData[3 + i * 6 + 2] = this._waveFormDataFloat[i] * 4.0;
-      // }
     }
 
     update () {
@@ -747,10 +743,8 @@ var mainModule = (function () {
       }
       if (USE_WASM) {
         this._calculateNormals();
-        // Module.asm.testPerf();
         this._planeData.normals = new Float32Array(Module.HEAPF32.buffer, this._wasmData.normalsPtr, this._planeData.normals.length);
         this._planeData.vertices = new Float32Array(Module.HEAPF32.buffer, this._wasmData.verticesPtr, this._planeData.vertices.length);
-        // console.log('normals calc took', performance.now() - t);
       } else {
         this._calculateNormals(this._planeData.vertices, this._planeData.indices);
       }
@@ -831,15 +825,17 @@ var mainModule = (function () {
       this._gl.clear(this._gl.COLOR_BUFFER_BIT | this._gl.DEPTH_BUFFER_BIT);
       this._gl.drawElements(this._drawCfg.drawMode, this._planeData.indices.length, this._gl.UNSIGNED_INT, 0);
       if (this._audioData) {
-        this._fillDOM.style.width = `${(this._audioCtx.currentTime / this._audioData.duration) * 100}%`;
+        this._progressBar.style.transform = `translate3d(${-100 + (this._playTime / this._audioData.duration) * 100}%, 0, 0)`;
       }
-      // this._gl.drawArrays(this._gl.TRIANGLES, 0, 4);
     }
 
     mainLoop () {
       requestAnimationFrame(this._binded.mainLoop);
       let t = performance.now();
       this._dt = t - this._prevFrameTime;
+      if (this._audioCtx.state !== 'suspended' && this._audioData !== undefined) {
+        this._playTime += this._dt * .001;
+      }
       this._prevFrameTime = performance.now();
       this.update();
       this.render();
@@ -850,6 +846,10 @@ var mainModule = (function () {
 })();
 
 
-window.onload = function () {
+Module.onRuntimeInitialized = function () {
   mainModule.init();
+};
+
+window.onload = function () {
+
 };

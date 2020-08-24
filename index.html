@@ -4,13 +4,24 @@
   <title>musvis</title>
   <meta charset="utf-8">
   <link rel="stylesheet" href="style.css"/>
+  <!-- <script src="https://connect.soundcloud.com/sdk/sdk-3.3.2.js"></script> -->
   <script type="text/javascript" src="wasm/a.out.js"></script>
   <script type="text/javascript" src="gl-matrix.js"></script>
   <script type="text/javascript" src="app.js"></script>
+
+  <script>
+  // SC.initialize({
+  //   client_id: '2jUTjsICrENhnUCdVvlwCRuI6bAEGqAJ'
+  // });
+
+  // SC.stream('/tracks/293').then(function(player){
+  //   player.play();
+  // });
+</script>
 </head>
 <body>
   <div class="debug-data"></div>
   <canvas></canvas>
-  <div class="progress"><div class="fill"></div></div>
+  <div class="progress-wrap"><div class="progress"></div></div>
 </body>
 </html>

@@ -1,22 +1,30 @@
 body {
   margin: 0;
+  overflow: hidden;
 }
 
 canvas {
   display: block;
 }
 
-.progress {
+.progress-wrap {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 10px;
+  height: 3px;
   cursor: pointer;
+  background: #333;
+  overflow: hidden;
 }
 
-.progress .fill {
-  width: 0%;
-  height: 100%;
+.progress-wrap:hover {
+  height: 10px;
+}
+
+.progress {
   background: #ff4115;
+  transform: translate3d(-100%, 0, 0);
+  width: 100%;
+  height: 100%;
 }
